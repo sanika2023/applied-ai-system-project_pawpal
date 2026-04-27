@@ -2,6 +2,78 @@ import streamlit as st
 from pawpal_system import Owner, Pet, Task, TaskStatus, Schedule, Scheduler, ScheduleEntry
 from datetime import date, time
 import pandas as pd
+from huggingface_hub import InferenceClient
+from dotenv import load_dotenv
+import os
+
+load_dotenv()
+
+
+def _build_agent_context(owner, target_date):
+    lines = [
+        f"Owner: {owner.name}",
+        f"Available time per day: {owner.available_time_per_day} minutes",
+        f"Schedule date: {target_date}",
+        "",
+    ]
+    for pet in owner.pets:
+        lines.append(f"Pet: {pet.name} ({pet.type}, age {pet.age})")
+        pending = pet.get_pending_tasks(target_date)
+        if pending:
+            lines.append(f"  Pending tasks ({len(pending)}):")
+            for t in pending:
+                priority_label = ["High", "Medium", "Low"][t.priority - 1]
+                recur = f", recurs {t.recurrence}" if t.recurrence else ""
+                window = (
+                    f", preferred {t.preferred_window[0].strftime('%H:%M')}-{t.preferred_window[1].strftime('%H:%M')}"
+                    if t.preferred_window else ""
+                )
+                lines.append(f"    - {t.name} ({t.type}, {t.duration_minutes}min, {priority_label} priority{recur}{window})")
+        else:
+            lines.append("  No pending tasks")
+        lines.append("")
+    return "\n".join(lines)
+
+
+def _run_ai_agent(api_key: str, context: str, user_request: str) -> tuple:
+    """2-step agentic loop: draft a plan, then self-check and revise. Returns (plan, final)."""
+    client = InferenceClient(
+        token=api_key,
+    )
+    system = (
+        "You are PawPal+, an intelligent pet care scheduling assistant. "
+        "You help owners plan optimal daily care schedules by analyzing tasks, "
+        "detecting issues, and providing clear, actionable recommendations."
+    )
+
+    messages = [
+        {"role": "system", "content": system},
+        {
+            "role": "user",
+            "content": (
+                f"Current pet care data:\n\n{context}\n\n"
+                f"Request: {user_request}\n\n"
+                "Step 1 — Draft an initial daily schedule plan."
+            ),
+        },
+    ]
+    model = "meta-llama/Llama-3.3-70B-Instruct"
+    r1 = client.chat_completion(model=model, messages=messages, max_tokens=1024)
+    plan = r1.choices[0].message.content
+
+    messages.append({"role": "assistant", "content": plan})
+    messages.append({
+        "role": "user",
+        "content": (
+            "Step 2 — Review your plan and check: "
+            "(1) Does total task time fit within the owner's available time? "
+            "(2) Are any essential care types missing for each pet? "
+            "(3) Are there any conflicts or gaps? "
+            "Revise if needed and provide your final recommendation."
+        ),
+    })
+    r2 = client.chat_completion(model=model, messages=messages, max_tokens=1024)
+    return plan, r2.choices[0].message.content
 
 st.set_page_config(page_title="PawPal+", page_icon="🐾", layout="wide")
 
@@ -113,7 +185,7 @@ if owner and owner.pets:
         priority_label = st.selectbox("Priority", list(priority_map.keys()), index=1, key="priority_select")
         priority = priority_map[priority_label]
     with col4:
-        task_type = st.selectbox("Type", ["exercise", "feeding", "grooming", "medical", "enrichment", "other"], key="type_select")
+        task_type = st.selectbox("Type", ["exercise", "feeding", "grooming", "bathing", "training", "playtime", "medical", "medication", "enrichment", "socialization", "other"], key="type_select")
     with col5:
         recurrence = st.selectbox("Recurrence", ["none", "daily", "weekly"], key="recur_select")
     
@@ -271,3 +343,46 @@ if owner and owner.pets:
             st.warning("📭 No pending tasks for the selected date. Add tasks to your pets first!")
 else:
     st.info("👈 Set up at least one pet with tasks to generate a schedule.")
+
+st.divider()
+
+# AI Agent Section
+st.markdown("## 🤖 AI Schedule Assistant")
+st.markdown(
+    "Describe what you need and the AI agent will **plan**, **self-check**, and **revise** "
+    "a care schedule recommendation for you."
+)
+
+if owner and owner.pets:
+    api_key = os.environ.get("HF_API_KEY", "")
+    if not api_key:
+        st.error("HF_API_KEY not found. Add it to your .env file and restart the app.")
+        st.stop()
+
+    ai_request = st.text_area(
+        "What would you like the AI agent to do?",
+        value="Analyze my pets' current tasks and suggest an optimized daily care schedule. Flag any gaps or issues.",
+        key="ai_request_input",
+    )
+
+    if st.button("🤖 Run AI Agent", key="run_agent_btn"):
+        if not api_key:
+            st.warning("Please provide an Anthropic API key.")
+        else:
+            context = _build_agent_context(owner, date.today())
+            with st.spinner("Agent is planning and self-checking..."):
+                try:
+                    plan, final = _run_ai_agent(api_key, context, ai_request)
+                    st.session_state.agent_plan = plan
+                    st.session_state.agent_final = final
+                except Exception as e:
+                    st.error(f"Agent error: {e}")
+
+    if st.session_state.get("agent_plan"):
+        with st.expander("Step 1 — Initial Plan (Agent's Draft)", expanded=False):
+            st.markdown(st.session_state.agent_plan)
+    if st.session_state.get("agent_final"):
+        st.markdown("### Final Recommendation")
+        st.markdown(st.session_state.agent_final)
+else:
+    st.info("👈 Set up at least one pet with tasks to use the AI assistant.")

@@ -1,3 +1,190 @@
+# PawPal+ — Module 4: AI-Enhanced Pet Care Scheduler
+
+---
+
+## Original Project (Modules 1–3)
+
+**Original project name:** PawPal+ (Module 2 Project)
+
+PawPal+ started as a rule-based Streamlit app that helps busy pet owners plan daily care tasks for their pets. It allowed users to add pets and tasks, generate a prioritized daily schedule based on available time, detect scheduling conflicts, and manage recurring tasks like daily walks or weekly grooming. The system was entirely deterministic — it applied fixed scheduling logic without any AI-generated reasoning or recommendations.
+
+---
+
+## Title and Summary
+
+**PawPal+ with AI Schedule Assistant**
+
+PawPal+ now includes an intelligent AI agent that analyzes your pets' pending tasks and generates an optimized, personalized care schedule using a large language model. Instead of just showing a rule-based timetable, the app reasons over your data in two steps — first drafting a plan, then self-checking and revising it — before presenting a final recommendation. This matters because pet care is contextual: a 3-year-old dog with high-priority medical tasks needs different scheduling logic than a cat with mostly low-priority enrichment tasks, and a static algorithm cannot explain or adapt its reasoning the way an AI agent can.
+
+---
+
+## Architecture Overview
+
+The system has two parallel pipelines that feed into a human review step:
+
+**Deterministic pipeline (left branch):**
+User input → Task Manager (Owner/Pet/Task classes) → Scheduler → Conflict Detector → Schedule display with warnings
+
+**AI agentic pipeline (right branch):**
+User input → Context Builder → Agent Step 1 (draft plan) ↔ LLM (Llama-3.3-70B via HuggingFace) → Agent Step 2 (self-check & revise) ↔ LLM → Final AI recommendation
+
+**Verification layer (bottom):**
+Both outputs are reviewed by the human user, and the core scheduling logic is independently verified by an automated test suite (`tests/test_pawpal.py`).
+
+```mermaid
+flowchart TD
+    A([User\nOwner · Pets · Tasks]) -->|enters data| B[Task Manager\nOwner · Pet · Task classes]
+
+    B -->|pending tasks| C[Scheduler\ngenerate_schedule]
+    C -->|time slots| D[Conflict Detector\ndetect_conflicts_with_warnings]
+    D -->|schedule + warnings| E[Schedule Display\nTimeline · Capacity · Conflicts]
+
+    B -->|serialized context| F[Context Builder\n_build_agent_context]
+    F -->|prompt + pet data| G[Agent Step 1\nDraft Plan]
+    G <-->|API call| H[(LLM\nLlama-3.3-70B\nvia HuggingFace)]
+    G -->|draft plan| I[Agent Step 2\nSelf-Check & Revise]
+    I <-->|API call| H
+    I -->|final recommendation| J[AI Recommendation Display]
+
+    E --> K([Human Review\nUser validates output])
+    J --> K
+
+    B --> L[Test Suite\ntest_pawpal.py]
+    L -->|pass / fail| M([Verified System Behavior])
+```
+
+---
+
+## Setup Instructions
+
+**1. Clone the repository and create a virtual environment:**
+```bash
+python -m venv .venv
+source .venv/bin/activate       # Windows: .venv\Scripts\activate
+```
+
+**2. Install dependencies:**
+```bash
+pip install -r requirements.txt
+```
+
+**3. Get a free HuggingFace API token:**
+- Go to huggingface.co/settings/tokens
+- Click **New token** → select **Read** → copy the token
+
+**4. Create a `.env` file in the project root:**
+```
+HF_API_KEY=your_token_here
+```
+
+**5. Run the app:**
+```bash
+streamlit run app.py
+```
+
+**6. (Optional) Run the test suite:**
+```bash
+python -m pytest tests/test_pawpal.py -v
+```
+
+---
+
+## Sample Interactions
+
+### Example 1 — Dog with mixed priorities
+
+**Setup:** Owner "Jordan" (480 min/day), pet "Mochi" the dog (age 3) with tasks:
+- Morning Walk (exercise, 30 min, High priority)
+- Breakfast (feeding, 15 min, High priority)
+- Vet Checkup (medical, 60 min, High priority)
+- Fetch (playtime, 20 min, Low priority)
+
+**User prompt:** *"Analyze my pets' current tasks and suggest an optimized daily care schedule. Flag any gaps or issues."*
+
+**AI Agent Step 1 (draft):**
+> I'll schedule high-priority tasks first. Suggested order: Breakfast at 7:00 AM (15 min), Morning Walk at 7:15 AM (30 min), Vet Checkup at 9:00 AM (60 min), Fetch at 4:00 PM (20 min). Total: 125 min out of 480 available.
+
+**AI Agent Step 2 (self-check → final):**
+> Reviewing my plan: total time (125 min) is well within the 480-minute limit — no capacity issues. All three high-priority tasks are scheduled in the morning, which is appropriate. One gap flagged: no feeding task after the vet visit. Consider adding an afternoon meal. Fetch is placed in the afternoon as a low-priority wind-down activity, which is appropriate. Final recommendation stands with the suggestion to add an afternoon feeding task.
+
+---
+
+### Example 2 — Multiple pets, potential conflict
+
+**Setup:** Owner "Alex" (300 min/day), pets "Luna" (cat) and "Buddy" (dog) with overlapping preferred windows:
+- Luna: Grooming (30 min, 9:00–9:30 AM)
+- Buddy: Morning Walk (45 min, 9:00–9:45 AM)
+
+**User prompt:** *"Check my schedule for conflicts and suggest fixes."*
+
+**AI Agent Step 2 (self-check → final):**
+> Conflict detected: Luna's Grooming and Buddy's Morning Walk both start at 9:00 AM. As a single owner, you cannot perform both simultaneously. Recommendation: shift Buddy's Morning Walk to 9:30 AM (after Luna's grooming ends). Revised total time: 75 min, well within your 300-minute limit. No other conflicts found.
+
+---
+
+### Example 3 — Overbooked owner
+
+**Setup:** Owner "Sam" (60 min/day), pet "Biscuit" (rabbit) with tasks totaling 90 min.
+
+**User prompt:** *"Can I fit all these tasks today?"*
+
+**AI Agent Step 2 (self-check → final):**
+> Capacity issue detected: total task time is 90 minutes but your available time is only 60 minutes — you are 30 minutes over capacity. Recommendation: defer the lowest-priority task (Enrichment Play, 30 min, Low priority) to tomorrow. Remaining tasks fit exactly within your available time. Alternatively, increase your available time setting if your schedule allows.
+
+---
+
+## Design Decisions
+
+**Why agentic workflow over RAG or fine-tuning?**
+The app already had deterministic scheduling logic. Adding a retrieval layer would have required building and maintaining a pet care knowledge base, which is substantial overhead for a student project. Fine-tuning requires labeled training data that doesn't exist. An agentic workflow was the right fit because it builds directly on the existing scheduling infrastructure — the AI reasons over live task data rather than retrieved documents or learned weights.
+
+**Why a 2-step loop?**
+A single LLM call produces a plan but has no mechanism to catch its own errors. The second call — where the agent is explicitly asked to check capacity, gaps, and conflicts — reliably catches issues the first draft misses. This is a minimal but genuine agentic loop: plan → verify → revise.
+
+**Why HuggingFace / Llama-3.3-70B?**
+The goal was a free, no-credit-card option. HuggingFace's Inference API provides access to open-weight models at no cost. Llama-3.3-70B is the strongest model available on the free tier and produces coherent, structured scheduling recommendations.
+
+**Trade-offs:**
+- The 2-step loop doubles API latency (~4–8 seconds total). A single-call approach would be faster but less reliable.
+- HuggingFace's free tier has rate limits (requests per day), which would be a bottleneck in a production app.
+- Session state in Streamlit means pet/task data resets on page refresh — a real app would use a database.
+
+---
+
+## Testing Summary
+
+**Reliability method:** Human evaluation — after each AI agent run, the user reads the final recommendation and manually checks it against the actual task list and capacity shown in the app, confirming the output is accurate and actionable before acting on it.
+
+**What worked:**
+- All 14 automated tests pass, covering task completion, time-based sorting, recurrence logic, and conflict detection.
+- The conflict detector correctly distinguishes same-pet conflicts (critical) from cross-pet overlap (capacity issue).
+- Recurring task generation correctly propagates deadlines and preserves all task attributes.
+
+**What didn't work / limitations:**
+- The AI agent's outputs are not automatically tested — there is no evaluator checking whether the LLM's recommendation is actually correct. Human review is the only check.
+- Early API attempts (Anthropic, Gemini, HuggingFace with older model names) failed due to quota limits or model compatibility issues before landing on the current setup.
+- The `_create_next_recurring_task` method is duplicated in `pawpal_system.py` — a code smell that didn't affect correctness but would need cleanup in production.
+
+**What I learned:**
+- Free-tier LLM APIs have real constraints that affect architecture choices.
+- Wrapping AI calls in a `try/except` with a clear `st.error` message is essential — silent failures are much harder to debug in Streamlit.
+- Automated tests for deterministic logic are straightforward; testing AI output quality requires a different approach (e.g., an evaluator LLM or human rubric).
+
+---
+
+## Reflection
+
+Building this project taught me that integrating AI into an existing system is less about the model and more about the interface between your data and the model. The hardest part wasn't writing the API call — it was deciding what context to serialize, how to phrase the prompt, and how to structure the agentic loop so the second step actually catches errors instead of just rephrasing the first.
+
+It also showed me that "free" AI APIs are not all equal. Hitting quota errors and model compatibility issues across three different providers before finding one that worked was a lesson in building resilient, swappable integrations rather than hardcoding a single provider.
+
+Most importantly, the project highlighted the gap between a system that *works* and a system that *works correctly*. The deterministic scheduler is fully tested and verifiable. The AI agent is useful but unverifiable without human review — which is exactly why the rubric requires human or testing involvement in the diagram. That distinction between deterministic and probabilistic components is fundamental to AI system design.
+
+---
+---
+
+# Original README (Modules 1–3)
+
 # PawPal+ (Module 2 Project)
 
 You are building **PawPal+**, a Streamlit app that helps a pet owner plan care tasks for their pet.

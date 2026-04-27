@@ -14,13 +14,19 @@ PawPal+ started as a rule-based Streamlit app that helps busy pet owners plan da
 
 **PawPal+ with AI Schedule Assistant**
 
-PawPal+ now includes an intelligent AI agent that analyzes your pets' pending tasks and generates an optimized, personalized care schedule using a large language model. Instead of just showing a rule-based timetable, the app reasons over your data in two steps — first drafting a plan, then self-checking and revising it — before presenting a final recommendation. This matters because pet care is contextual: a 3-year-old dog with high-priority medical tasks needs different scheduling logic than a cat with mostly low-priority enrichment tasks, and a static algorithm cannot explain or adapt its reasoning the way an AI agent can.
+PawPal+ now includes an intelligent AI agent that analyzes your pets' pending tasks and generates an optimized, personalized care schedule using a large language model. It is implementing an **Agentic Workflow**.Instead of just showing a rule-based timetable, the app reasons over your data in two steps — first drafting a plan, then self-checking and revising it — before presenting a final recommendation. This matters because pet care is contextual: a 3-year-old dog with high-priority medical tasks needs different scheduling logic than a cat with mostly low-priority enrichment tasks, and a static algorithm cannot explain or adapt its reasoning the way an AI agent can.
+
+---
+
+## Demo Walkthrough
+
+[![PawPal+ Loom Walkthrough](https://cdn.loom.com/sessions/thumbnails/e1a5111d6c4042ed80cd4a13e259b9e3-with-play.gif)](https://www.loom.com/share/e1a5111d6c4042ed80cd4a13e259b9e3)
 
 ---
 
 ## Architecture Overview
 
-The system has two parallel pipelines that feed into a human review step:
+The system is using Agentic Workflow. It has two parallel pipelines that feed into a human review step:
 
 **Deterministic pipeline (left branch):**
 User input → Task Manager (Owner/Pet/Task classes) → Scheduler → Conflict Detector → Schedule display with warnings
@@ -89,7 +95,7 @@ python -m pytest tests/test_pawpal.py -v
 
 ---
 
-## Sample Interactions
+## Sample Interactions (Other than the loom demo)
 
 ### Example 1 — Dog with mixed priorities
 

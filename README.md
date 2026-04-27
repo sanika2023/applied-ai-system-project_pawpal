@@ -20,7 +20,7 @@ PawPal+ now includes an intelligent AI agent that analyzes your pets' pending ta
 
 ## Demo Walkthrough
 
-[![PawPal+ Loom Walkthrough](https://cdn.loom.com/sessions/thumbnails/e1a5111d6c4042ed80cd4a13e259b9e3-with-play.gif)](https://www.loom.com/share/e1a5111d6c4042ed80cd4a13e259b9e3)
+[Watch PawPal+ Demo Walkthrough on Loom](https://www.loom.com/share/e1a5111d6c4042ed80cd4a13e259b9e3)
 
 ---
 

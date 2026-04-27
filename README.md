@@ -180,11 +180,13 @@ It also showed me that "free" AI APIs are not all equal. Hitting quota errors an
 
 Most importantly, the project highlighted the gap between a system that *works* and a system that *works correctly*. The deterministic scheduler is fully tested and verifiable. The AI agent is useful but unverifiable without human review — which is exactly why the rubric requires human or testing involvement in the diagram. That distinction between deterministic and probabilistic components is fundamental to AI system design.
 
+### Reflection from the reflection.md file:
+
 ### Limitations and Biases
 
 The AI agent in PawPal+ has no knowledge of individual pet health conditions, breed-specific needs, or veterinary guidelines — it reasons only from the task data the user manually entered. This means it can produce confident-sounding recommendations that are medically inappropriate (e.g., recommending a high-intensity exercise task for a dog recovering from surgery, because "high priority" was set by the user). The system also inherits any biases in the underlying LLM: Llama-3.3-70B was trained predominantly on English-language internet text, so its pet care assumptions skew toward Western, dog/cat-centric norms and may not translate well to less common pets like reptiles or birds. Additionally, the 2-step agentic loop does not guarantee correctness — the model can agree with its own incorrect draft during self-review rather than catching the error
 
-### Reflection from the reflection.md file:
+
 
 ### Potential for Misuse and Prevention
 
